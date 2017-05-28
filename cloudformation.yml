@@ -1,0 +1,236 @@
+Parameters:
+  PollyBucketName:
+    Type: String
+    Description: name for s3 bucket
+
+  APIGPassword:
+    Type: String
+    Description: password needed by ManagePolly lambda function
+
+Resources:
+
+  LambdaPermissionAPIGManagePolly:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName:
+        !GetAtt LambdaManagePolly.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+
+  LambdaPermissionAPIGServeForm:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName:
+        !GetAtt LambdaServeForm.Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+
+
+  LambdaGlobalRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        -
+          PolicyName: "inline-policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: arn:aws:logs:*:*:*
+              -
+                Effect: "Allow"
+                Action:
+                  - polly:SynthesizeSpeech
+                Resource: "*"
+              -
+                Effect: "Allow"
+                Action:
+                  - s3:*
+                Resource:
+                  - !Sub arn:aws:s3:::${S3BucketPolly}
+                  - !Sub arn:aws:s3:::${S3BucketPolly}/*
+
+
+  APIGExecuteLambdaRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "apigateway.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        -
+          PolicyName: "inline-policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  !GetAtt LambdaServeForm.Arn
+
+  LambdaServeForm:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Code:
+        ZipFile: |
+          import json
+          def handler(event, context):
+            print(json.dumps(event))
+            return {}
+      Description: serve basic web form
+      FunctionName:
+        !Sub ${AWS::StackName}_ServeForm
+      Handler: index.handler
+      MemorySize: 128
+      Role:
+        !GetAtt LambdaGlobalRole.Arn
+      Runtime: python2.7
+      Timeout: 60
+
+  LambdaManagePolly:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Code:
+        ZipFile: |
+          import json
+          def handler(event, context):
+            print(json.dumps(event))
+            return {}
+      Description: text -> polly -> s3. Returns GETtable URL
+      FunctionName:
+        !Sub ${AWS::StackName}_ManagePolly
+      Handler: index.handler
+      MemorySize: 128
+      Role:
+        !GetAtt LambdaGlobalRole.Arn
+      Runtime: python2.7
+      Timeout: 60
+      Environment:
+        Variables:
+          polly_bucket: !Ref S3BucketPolly
+          password: !Ref APIGPassword
+
+
+  S3BucketPolly:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref PollyBucketName
+    DeletionPolicy: Delete
+    LifecycleConfiguration:
+      Rules:
+        -
+          ExpirationInDays: 1
+          Id: "delete / after 5 days"
+          Prefix: /
+          Status: Enabled
+
+  APIGateway:
+    Type: "AWS::ApiGateway::RestApi"
+    Properties:
+      Name:
+        !Join [ "_", [ !Ref "AWS::StackName", APIG ] ]
+
+  APIGPollyResource:
+    Type: "AWS::ApiGateway::Resource"
+    Properties:
+      ParentId:
+        !GetAtt APIGateway.RootResourceId
+      PathPart: polly
+      RestApiId: !Ref APIGateway
+
+  APIGResourceWebFormGET:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      ResourceId:
+        !GetAtt APIGateway.RootResourceId
+      RestApiId:
+        !Ref APIGateway
+      Integration:
+        Credentials:
+          !GetAtt APIGExecuteLambdaRole.Arn
+        Type: AWS_PROXY
+        IntegrationHttpMethod: GET
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${Arn}/invocations
+          - Arn:
+              Fn::GetAtt:
+              - LambdaServeForm
+              - Arn
+
+  APIGResourceWebFormPOST:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      ResourceId:
+        !Ref APIGPollyResource
+      RestApiId:
+        !Ref APIGateway
+      Integration:
+        Credentials:
+          !GetAtt APIGExecuteLambdaRole.Arn
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${Arn}/invocations
+          - Arn:
+              Fn::GetAtt:
+              - LambdaManagePolly
+              - Arn
+
+  #Note this resource is required even though it will
+  #actually create a stage called 'dummystage' which won't
+  #be used. Some info from AWS forum here:
+  #https://forums.aws.amazon.com/thread.jspa?messageID=737087
+  APIGDeploymentProd:
+    DependsOn:
+      - APIGPollyResource
+      - APIGResourceWebFormGET
+    Type: "AWS::ApiGateway::Deployment"
+    Properties:
+      RestApiId:
+        !Ref APIGateway
+      StageName: dummystage
+
+
+  APIGStage:
+    Type: "AWS::ApiGateway::Stage"
+    Properties:
+      DeploymentId: !Ref APIGDeploymentProd
+      RestApiId: !Ref APIGateway
+      StageName: LATEST
+
+  ## Note: using the below method does not seem to generate
+  ## a verification email (console works okay though so use that instead)
+  # ACMCertificate:
+  #   Type: "AWS::CertificateManager::Certificate"
+  #   Properties:
+  #     DomainName: !Sub ${AWS::StackName}.<hostedzone>
