@@ -7,7 +7,7 @@ content = """
 
     <style>
     #main-div {
-      width: 500px;
+      width: 600px;
       margin: 0 auto;
     }
 
@@ -17,6 +17,25 @@ content = """
 
     #voice-sel {
       width: 200px;
+    }
+
+    #translation-sel {
+      width: 200px;
+    }
+
+    .side-by-side {
+      margin: auto;
+      margin-top: 20px;
+    }
+
+    .float-left {
+      float: left;
+      margin-right: 10px;
+    }
+
+    .sub-div {
+      clear: left;
+      padding-top: 10px;
     }
 
     </style>
@@ -29,44 +48,60 @@ content = """
       <label for="comment">Text to convert to speech</label>
       <textarea id="text-in" class="form-control" rows="5" cols="13" id="comment"></textarea>
 
-      <label for="sel1">Voice</label>
-      <select class="form-control" id="voice-sel">
-        <option value="Nicole">Nicole (Australian)</option>
-        <option value="Russel">Russel (Australian)</option>
-        <option value="Raveena">Raveena (Indian)</option>
-        <option value="Hans">Hans (German)</option>
-        <option value="Dora">Dora (Icelandic)</option>
-      </select>
-
-      <button id="sub" type="submit" class="btn btn-primary">Submit</button>
-
+      <div class="side-by-side">
+        <label class="float-left" for="voice-sel">Voice</label>
+        <select class="form-control float-left" id="voice-sel">
+          <option value="Nicole">Nicole (Australian)</option>
+          <option value="Russell">Russell (Australian)</option>
+          <option value="Russell">Mathieu (French)</option>
+          <option value="Hans">Hans (German)</option>
+          <option value="Dora">Dora (Icelandic)</option>
+          <option value="Dora">Filiz (Turkish)</option>
+          <option value="Dora">Mizuki (Japanese)</option>
+        </select>
+        <label class="float-left" for="translation-sel">Translation</label>
+        <select class="form-control float-left" id="translation-sel">
+          <option value="none">none</option>
+          <option value="en-de">German</option>
+          <option value="en-fr">French</option>
+          <option value="en-is">Icelandic</option>
+          <option value="en-ja">Japanese</option>
+          <option value="en-tr">Turkish</option>
+        </select>
+        <div class="sub-div">
+          <button id="sub" type="submit" class="btn btn-primary">Submit</button>
+        </div>
+      </div>
     </div>
+
     <script>
 
       $('#sub').click(function() {
-        console.log('submitting');
+
+        payload = {}
 
         var text = $('#text-in').val();
-        console.log('text: ' + text);
+        payload.text = text;
 
         var pwd = $('#pwd').val();
-        console.log('password: ' + pwd);
+        payload.password = pwd;
 
         var voice = $('#voice-sel').find(":selected").val();
-        console.log('voice: ' + voice);
+        payload.voice = voice;
+
+        var translation = $('#translation-sel').find(":selected").val();
+
+        if (translation != 'none') {
+          payload.translation = translation;
+        }
 
         $.ajax({
           type: "POST",
           url: window.location.origin + '/polly',
           contentType: "application/json; charset=utf-8",
-          data: JSON.stringify({
-            password: pwd,
-            text: text,
-            voice: voice
-          }),
+          data: JSON.stringify(payload),
           success: function(data) {
-            console.log('success');
-            console.log(data);
+
             new Audio(data.location).play();
           }
         });

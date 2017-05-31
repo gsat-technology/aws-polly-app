@@ -7,6 +7,14 @@ Parameters:
     Type: String
     Description: password needed by ManagePolly lambda function
 
+  YandexKey:
+    Type: String
+    Description: yandex api key
+
+  YandexTranslateEndpoint:
+    Type: String
+    Description: yandex translate service endpoint
+
 Resources:
 
   LambdaPermissionAPIGManagePolly:
@@ -135,20 +143,22 @@ Resources:
         Variables:
           polly_bucket: !Ref S3BucketPolly
           password: !Ref APIGPassword
+          yandex_key: !Ref YandexKey
+          yandex_translate_endpoint: !Ref YandexTranslateEndpoint
 
 
   S3BucketPolly:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Ref PollyBucketName
+      LifecycleConfiguration:
+        Rules:
+          -
+            ExpirationInDays: 1
+            Id: "delete / after 5 days"
+            Prefix: /
+            Status: Enabled
     DeletionPolicy: Delete
-    LifecycleConfiguration:
-      Rules:
-        -
-          ExpirationInDays: 1
-          Id: "delete / after 5 days"
-          Prefix: /
-          Status: Enabled
 
   APIGateway:
     Type: "AWS::ApiGateway::RestApi"

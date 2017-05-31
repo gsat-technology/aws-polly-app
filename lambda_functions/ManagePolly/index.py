@@ -1,15 +1,27 @@
 import os
 import json
 import uuid
+import xml.dom.minidom
+import re
+import requests
+import urllib
 
 import boto3
+
 
 #environment variables
 polly_bucket = os.environ['polly_bucket']
 pwd = os.environ['password']
+yandex_key = os.environ['yandex_key']
+yandex_translate_endpoint = os.environ['yandex_translate_endpoint']
 
 polly_client = boto3.client('polly')
 s3_client = boto3.client('s3')
+
+
+def caseInsensitiveReplace(text, orig, new):
+    pattern = re.compile(orig, re.IGNORECASE)
+    return pattern.sub(new, text)
 
 
 def textToS3Location(text, voice):
@@ -17,11 +29,21 @@ def textToS3Location(text, voice):
 
     key = '{}.mp3'.format(str(uuid.uuid4())[:6])
 
+    #if it kinda looks like SSML, let's assume that's what
+    #the use is trying to do
+    if '<speak>' in text:
+        print('textType is SSML')
+        text_type = 'ssml'
+    else:
+        print('textType is text')
+        text_type = 'text'
+
+
     response = polly_client.synthesize_speech(
          OutputFormat='mp3',
          SampleRate='8000',
          Text=text,
-         TextType='text',
+         TextType=text_type,
          VoiceId=voice
      )
 
@@ -43,11 +65,24 @@ def textToS3Location(text, voice):
         return None
 
 
+def translate(text, lang):
+
+    #yandex requires text to be urlencoded
+    url_enc_text = urllib.quote_plus(text)
+
+    query = '{}?key={}&text={}&lang={}'.format(yandex_translate_endpoint, yandex_key, url_enc_text, lang)
+    r = requests.get(query)
+
+    if r.status_code == 200:
+        return r.json()['text'][0]
+    else:
+        print('there was some error trying to translate')
+        return None
+
 
 def handler(event, context):
 
     print(event)
-
 
     response = {
         'statusCode': None,
@@ -71,7 +106,16 @@ def handler(event, context):
             if pwd == body['password']:
                 print('correct password')
 
-                result = textToS3Location(body['text'], body['voice'])
+                text = body['text']
+
+                if 'translation' in body:
+                     text = translate(text, body['translation'])
+
+                #if translation doesn't work, just continue with orig text
+                if not text:
+                    text = body['text']
+
+                result = textToS3Location(text, body['voice'])
 
                 if result:
                     response['statusCode'] = 200
