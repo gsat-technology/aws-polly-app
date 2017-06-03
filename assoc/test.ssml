@@ -1,0 +1,8 @@
+<speak>Hi AWS Meetup Hobart. I'd like to show you a few features of SSML! First let's just break for 3 seconds
+<break time="3000ms"/>Cool! Okay so.
+ <prosody rate='slow'>this is me talking slowly and</prosody>
+ <prosody rate='x-slow'>this is me talking really slowly</prosody>
+ <prosody rate='fast'>this is me talking fast</prosody>
+ <prosody rate='x-fast'>this is me talking really fast.</prosody>
+ <prosody pitch='x-low'>The end</prosody>
+</speak>
